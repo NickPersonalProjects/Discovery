@@ -1,0 +1,146 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ClaimStatus {
+  UNCLAIMED
+  OWNER_CLAIMED
+}
+
+enum PublicationStatus {
+  PENDING
+  PUBLISHED
+  UNPUBLISHED
+  REJECTED
+}
+
+enum VerificationStatus {
+  IMPORTED
+  COMMUNITY_SUBMITTED
+  OWNER_CLAIMED
+  ADMIN_VERIFIED
+  POSSIBLY_STALE
+}
+
+enum Availability {
+  YEAR_ROUND
+  SEASONAL
+}
+
+enum SalesMethod {
+  FARM_STAND
+  CSA
+  PICKUP
+  DELIVERY
+  SHIPPING
+  FARMERS_MARKET
+}
+
+model Farm {
+  id                   String             @id @default(cuid())
+  slug                 String             @unique
+  name                 String
+  description          String
+  street               String
+  city                 String
+  state                String
+  postalCode           String
+  country              String             @default("US")
+  latitude             Decimal            @db.Decimal(9, 6)
+  longitude            Decimal            @db.Decimal(9, 6)
+  coordinates          Unsupported("geometry(Point, 4326)")?
+  phone                String?
+  publicEmail          String?
+  website              String?
+  socialLinks          Json               @default("[]")
+  visitInfo            String?
+  hours                String?
+  seasonalAvailability String?
+  salesMethods         SalesMethod[]
+  claimStatus          ClaimStatus        @default(UNCLAIMED)
+  publicationStatus    PublicationStatus  @default(PENDING)
+  verificationStatus   VerificationStatus @default(COMMUNITY_SUBMITTED)
+  lastVerifiedAt       DateTime?
+  products             FarmProduct[]
+  practiceClaims       PracticeClaim[]
+  sourceRecords        SourceRecord[]
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([city, state])
+  @@index([postalCode])
+  // Add a GiST index on coordinates in a SQL migration when PostGIS is enabled.
+}
+
+model ProductCategory {
+  id       String        @id
+  label    String
+  products FarmProduct[]
+}
+
+model FarmProduct {
+  id          String          @id @default(cuid())
+  farmId      String
+  categoryId  String
+  name        String
+  details     String?
+  availability Availability   @default(SEASONAL)
+  season      String?
+  farm        Farm            @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  category    ProductCategory @relation(fields: [categoryId], references: [id])
+
+  @@index([categoryId])
+}
+
+model PracticeClaim {
+  id               String  @id @default(cuid())
+  farmId           String
+  label            String
+  note             String
+  certificationUrl String?
+  farm             Farm    @relation(fields: [farmId], references: [id], onDelete: Cascade)
+}
+
+model SourceRecord {
+  id            String   @id @default(cuid())
+  farmId        String
+  sourceName    String
+  sourceUrl     String?
+  externalId    String?
+  importedAt    DateTime @default(now())
+  lastCheckedAt DateTime?
+  rawMetadata    Json?
+  usageNotes    String
+  farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceName, externalId])
+  @@index([farmId])
+}
+
+model FarmSubmission {
+  id                   String             @id @default(cuid())
+  farmName             String
+  contactName          String
+  contactEmail         String
+  phone                String?
+  website              String?
+  street               String
+  city                 String
+  state                String
+  postalCode           String
+  productCategories    String[]
+  productDetails       String
+  salesMethods         SalesMethod[]
+  hours                String
+  ownershipAttestation String
+  sourceNotes          String
+  publicationStatus    PublicationStatus  @default(PENDING)
+  verificationStatus   VerificationStatus @default(COMMUNITY_SUBMITTED)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+}
