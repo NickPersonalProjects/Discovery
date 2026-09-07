@@ -1,15 +1,34 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PRODUCT_CATEGORIES, SALES_METHOD_LABELS } from "@/features/farms/product-taxonomy";
-import { farmRepository } from "@/features/farms/repository";
+import { getServerFarmRepository } from "@/features/farms/repository-server";
 
-export function generateStaticParams() {
-  return farmRepository.listPublished().map((farm) => ({ slug: farm.slug }));
+export async function generateStaticParams() {
+  const repository = getServerFarmRepository();
+  const farms = await repository.listPublished();
+  return farms.map((farm) => ({ slug: farm.slug }));
 }
 
 export default async function FarmDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+  const repository = getServerFarmRepository();
+  const health = await repository.health();
+
+  if (!health.ok) {
+    return (
+      <main className="narrow-page">
+        <Link className="text-link" href="/">
+          ← Back to search
+        </Link>
+        <article className="detail-card">
+          <h1>Farm data is temporarily unavailable</h1>
+          <p>{health.message}</p>
+        </article>
+      </main>
+    );
+  }
+
   const { slug } = await params;
-  const farm = farmRepository.findBySlug(slug);
+  const farm = await repository.findBySlug(slug);
 
   if (!farm) {
     notFound();
@@ -32,7 +51,7 @@ export default async function FarmDetailPage({ params }: { params: Promise<{ slu
           <span className="badge">{farm.verificationStatus.replaceAll("-", " ")}</span>
         </header>
 
-        <p className="lead">{farm.description}</p>
+        <p className="lead">{farm.description || "No description has been provided yet."}</p>
 
         <section className="detail-section" aria-labelledby="contact-title">
           <h2 id="contact-title">Contact and links</h2>
@@ -83,7 +102,7 @@ export default async function FarmDetailPage({ params }: { params: Promise<{ slu
               <div className="product-card" key={product.id}>
                 <strong>{product.name}</strong>
                 <span>{PRODUCT_CATEGORIES.find((category) => category.id === product.category)?.label}</span>
-                <p>{product.details}</p>
+                <p>{product.details || "Details unavailable"}</p>
                 <p>{product.availability === "year-round" ? "Year-round" : product.season ?? "Seasonal"}</p>
               </div>
             ))}
@@ -95,19 +114,19 @@ export default async function FarmDetailPage({ params }: { params: Promise<{ slu
           <dl className="metadata-grid">
             <div>
               <dt>Hours</dt>
-              <dd>{farm.hours}</dd>
+              <dd>{farm.hours || "Not provided"}</dd>
             </div>
             <div>
               <dt>Seasonality</dt>
-              <dd>{farm.seasonalAvailability}</dd>
+              <dd>{farm.seasonalAvailability || "Not provided"}</dd>
             </div>
             <div>
               <dt>Sales methods</dt>
-              <dd>{farm.salesMethods.map((method) => SALES_METHOD_LABELS[method]).join(", ")}</dd>
+              <dd>{farm.salesMethods.map((method) => SALES_METHOD_LABELS[method]).join(", ") || "Not listed"}</dd>
             </div>
             <div>
               <dt>Visit notes</dt>
-              <dd>{farm.visitInfo}</dd>
+              <dd>{farm.visitInfo || "Not provided"}</dd>
             </div>
           </dl>
         </section>
@@ -115,12 +134,12 @@ export default async function FarmDetailPage({ params }: { params: Promise<{ slu
         <section className="detail-section" aria-labelledby="practices-title">
           <h2 id="practices-title">Practice and certification claims</h2>
           <p className="muted">
-            Claims are displayed for transparency and are not Discovery endorsements unless certification evidence is
-            attached.
+            Practice data sourced from directories or owners is displayed as source-provided claims, not independent
+            verification by Discovery.
           </p>
           <ul className="claim-list">
             {farm.practiceClaims.map((claim) => (
-              <li key={claim.label}>
+              <li key={`${claim.label}-${claim.note}`}>
                 <strong>{claim.label}</strong>
                 <p>{claim.note}</p>
               </li>
@@ -149,6 +168,11 @@ export default async function FarmDetailPage({ params }: { params: Promise<{ slu
               <li key={source.id}>
                 <strong>{source.sourceName}</strong>
                 <p>{source.usageNotes}</p>
+                {source.sourceUrl && (
+                  <p>
+                    Source URL: <a href={source.sourceUrl}>{source.sourceUrl}</a>
+                  </p>
+                )}
                 <p>Last checked {new Date(source.lastCheckedAt).toLocaleDateString()}</p>
               </li>
             ))}

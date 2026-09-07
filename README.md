@@ -1,85 +1,127 @@
 # Discovery Farm Finder
 
-Discovery is a production-oriented MVP scaffold for a responsive local farm finder. It helps visitors search for farms selling products near them without requiring an account, then browse list results, a map-ready fallback, and detailed farm profiles with transparent source attribution.
+Discovery is a nationwide-ready local farm finder foundation for all 50 U.S. states plus Washington, D.C. It now uses PostgreSQL/PostGIS persistence, an async repository boundary, and an Eatwild-only importer adapter behind explicit runtime safeguards.
 
-This first PR uses deterministic fictional seed data only. It is architected to become nationwide-ready with PostgreSQL/PostGIS, Supabase, MapLibre, moderation workflows, and permission-based data ingestion.
+## Architecture and data flow
 
-## Current MVP capabilities
+- **UI (Next.js App Router)** calls server API routes for search and health checks.
+- **Server repository boundary** resolves to:
+  - Prisma/PostgreSQL implementation for production (`DATABASE_URL` configured), or
+  - deterministic fictional seed repository only when explicitly enabled (`LOCAL_DEMO_SEED_ENABLED=true`).
+- **Search pipeline** supports:
+  - browser coordinates,
+  - textual U.S. location queries (ZIP or city/state) via optional geocoder provider,
+  - category filters,
+  - published-only filtering,
+  - bounded pagination,
+  - PostGIS distance ordering/radius filtering when coordinates are available.
+- **Importer pipeline**:
+  - discovers Eatwild state pages from the directory index,
+  - parses structured listing facts,
+  - maps product keywords into taxonomy,
+  - geocodes through an injected provider,
+  - performs duplicate-candidate checks,
+  - upserts source records idempotently with source attribution metadata.
 
-- Search by seeded ZIP code or city, with radius filtering.
-- Optional browser geolocation with clear permission messaging and no default persistence of visitor coordinates.
-- Product-category filters for meat, eggs, dairy, produce, honey, flowers, and prepared foods.
-- Responsive list results with distance, location, key products, sales methods, verification state, and last-verified dates.
-- Map-oriented panel that stays accessible when map tiles or API keys are not configured.
-- Farm profile pages for public contact information, address, social links, products, hours, seasonality, sales methods, source attribution, and practice/certification claims.
-- Farm submission foundation with client-side validation and a documented pending/unpublished moderation boundary.
-- Domain model support for owner-claim, publication, verification, and source-record states.
+## Critical Eatwild compliance warning
 
-## Architecture
+Eatwild is a curated paid-listing directory. This repository includes a technically complete importer adapter but **does not grant usage rights**.
 
-The app uses Next.js, TypeScript, and the App Router.
+You must explicitly opt in before any import run and are responsible for:
 
-```text
-src/app/                     Route entry points
-src/components/              Reusable client components
-src/features/farms/          Farm domain types, taxonomy, seed data, repository boundary, search logic
-src/features/submissions/    Submission validation schema
-prisma/schema.prisma         PostgreSQL/PostGIS-ready relational model
-```
+- permission/authorization,
+- terms compliance,
+- robots directives,
+- rate limits,
+- required attribution.
 
-The UI reads from `farmRepository`, which currently serves deterministic fictional records from `seed-farms.ts`. That repository boundary is intentionally small so a future PostgreSQL implementation can replace the local seed provider without rewriting pages.
-
-Canonical farm records are modeled separately from `SourceRecord` entries. This allows multiple external records to point at the same farm while retaining provenance, license notes, import/check timestamps, and future duplicate-detection metadata.
-
-## Data-source policy
-
-Do **not** scrape, bulk-copy, or republish Eatwild listings in this project without permission. Eatwild may be useful for research or a future authorized integration, but this MVP contains no Eatwild data.
-
-Preferred future ingestion sources include:
-
-- USDA Local Food Directories, subject to API/download terms.
-- State agriculture and extension directories with compatible reuse terms.
-- Owner-submitted listings and owner-claimed corrections.
-- Public certification datasets where license terms allow reuse.
-- Permission-based integrations with directories such as Eatwild.
-
-Each importer should create `SourceRecord` rows with source name, source URL, external ID, check timestamps, raw metadata placeholders, and usage/license notes. Importers should not overwrite owner-verified canonical fields without moderation. Duplicate detection should compare normalized name, address, phone, website, and geographic proximity before merge.
-
-## Privacy, safety, and accessibility decisions
-
-- Visitor geolocation is requested only after an explanation and is kept in browser state for the current search.
-- The app does not persist a visitor's precise location by default.
-- Farm phone, email, website, address, and social links are treated as intentionally public listing fields.
-- Farming-practice statements are displayed as claims, not endorsements, unless certification evidence is attached.
-- Forms and controls use labels, semantic HTML, keyboard-accessible inputs, visible focus states, and readable contrast.
+The importer fails safely when opt-in is absent.
 
 ## Environment variables
 
-Copy `.env.example` to `.env.local` when connecting hosted services.
+Copy `.env.example` to `.env.local` and configure:
 
-| Variable | Required now? | Purpose |
-| --- | --- | --- |
-| `DATABASE_URL` | No | Supabase/PostgreSQL connection string for Prisma/PostGIS persistence. |
-| `NEXT_PUBLIC_MAP_STYLE_URL` | No | Future MapLibre style URL; when empty, the accessible fallback is used. |
-| `NEXT_PUBLIC_SUPABASE_URL` | No | Future Supabase browser client URL. |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | No | Future Supabase anon key. |
-| `SUPABASE_SERVICE_ROLE_KEY` | No | Future server-only admin operations; never expose to the browser. |
+- `DATABASE_URL` for PostgreSQL/PostGIS.
+- `LOCAL_DEMO_SEED_ENABLED=true` only for explicit local demo fallback.
+- `EATWILD_IMPORT_ENABLED=true` only for explicit authorized import runs.
+- `EATWILD_IMPORT_USER_AGENT` with contact details.
+- importer throttle/concurrency/retry variables.
+- optional geocoder config: `GEOCODER_PROVIDER=nominatim` + `GEOCODER_USER_AGENT`.
 
-## Setup
+## Local PostgreSQL/PostGIS setup (Supabase-compatible)
 
-Install dependencies:
-
-```bash
-npm ci
-```
-
-Run the development server:
+1. Provision PostgreSQL with PostGIS enabled (Supabase/Postgres + PostGIS extension).
+2. Set `DATABASE_URL`.
+3. Run migration and client generation:
 
 ```bash
-npm run dev
+npm run db:generate
+npm run db:migrate
 ```
 
-Open <http://localhost:3000>.
+4. Seed deterministic demo records (idempotent):
+
+```bash
+npm run db:seed
+```
+
+## Import commands
+
+### Dry-run for one state
+
+```bash
+npm run import:eatwild -- --state=VA --dry-run
+```
+
+### Write import for one state (explicit opt-in required)
+
+```bash
+EATWILD_IMPORT_ENABLED=true npm run import:eatwild -- --state=VA
+```
+
+### Nationwide import (stronger confirmation required)
+
+```bash
+EATWILD_IMPORT_ENABLED=true npm run import:eatwild -- --all-states --confirm-national-import
+```
+
+Importer output includes structured counts for:
+
+- pages fetched
+- listings parsed
+- inserted
+- updated
+- skipped
+- duplicate candidates
+- parse warnings
+- failures
+
+## Data freshness and re-import strategy
+
+- Re-run importer state-by-state or nationwide as needed.
+- Source records are upserted idempotently by stable source IDs.
+- Keep parse warnings/failures and review before publish decisions.
+- Use pending/unpublished states for records that miss minimum publish criteria.
+
+## Search and publication behavior
+
+- Radius results are PostGIS distance queries and sorted nearest-first.
+- Records without reliable coordinates are not included in radius matches.
+- Textual location search returns a clear configuration message if geocoding is unavailable.
+- Practice info from Eatwild is displayed as **source-provided claims**, not independent verification.
+
+## Health/readiness behavior
+
+- `/api/health` reports repository readiness.
+- Missing DB configuration returns understandable errors instead of silently serving fictional production data.
+
+## Deferred work (intentionally not expanded in this PR)
+
+- public farm submissions workflow expansion,
+- owner-claim/authentication flows,
+- admin moderation console.
+
+Existing submission UI/domain scaffolding remains available but unchanged in scope.
 
 ## Quality commands
 
@@ -90,38 +132,19 @@ npm test
 npm run build
 ```
 
-GitHub Actions runs the same lint, type-check, test, and build checks on pull requests.
+## Operational safeguards and rollback guidance
 
-## Database model
+- Keep importer runs explicit and state-scoped when possible.
+- Start with `--dry-run` to validate parser/geocoder behavior.
+- Use database backups/point-in-time recovery before nationwide writes.
+- To roll back a bad import, restore from backup or remove affected `SourceRecord`/`Farm` rows scoped by `sourceName='Eatwild'` and import timestamps.
 
-`prisma/schema.prisma` targets PostgreSQL and is ready for Supabase-hosted Postgres. Coordinates are stored as latitude/longitude decimals and include a PostGIS `geometry(Point, 4326)` field placeholder. A future migration should enable PostGIS and add a GiST index for radius searches.
+## Production checklist
 
-Core models include:
-
-- `Farm` for canonical listing data, contact fields, publication, claim, and verification states.
-- `ProductCategory` and `FarmProduct` for standardized filters plus free-text product details and availability.
-- `SourceRecord` for external provenance and license/usage notes.
-- `PracticeClaim` for claims/certifications without implying endorsement.
-- `FarmSubmission` for pending moderation intake.
-
-## Seed data
-
-All records in `src/features/farms/seed-farms.ts` are fictional demonstration listings created for this scaffold. They are deterministic so tests and local UI evaluation are stable.
-
-Try searches such as:
-
-- `Lancaster` or `17602`
-- `Charlottesville`
-- `Madison` or `53703`
-- `Ames`
-
-## Deferred production work
-
-1. Add authenticated owner accounts and email verification.
-2. Persist submissions to PostgreSQL as unpublished moderation records.
-3. Build admin review, source merge, duplicate-resolution, and stale-listing workflows.
-4. Add permission-based importers, starting with USDA Local Food Directories.
-5. Add geocoding with rate limits, address normalization, and deduplication review.
-6. Enable PostGIS migrations and geographic indexes for nationwide radius search.
-7. Add a MapLibre renderer when tile/style configuration is selected.
-8. Add monitoring, privacy-preserving analytics, and production deployment configuration.
+- [ ] PostgreSQL/PostGIS provisioned and reachable from runtime.
+- [ ] Prisma migration deployed.
+- [ ] `DATABASE_URL` configured server-side only.
+- [ ] Geocoder provider configured (or textual geocode disabled intentionally).
+- [ ] Eatwild permission/compliance confirmed before enabling import.
+- [ ] Import runbook documented for dry-run, state import, nationwide confirmation, and rollback.
+- [ ] Monitoring/alerts configured for importer failures and DB health.

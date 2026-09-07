@@ -45,18 +45,21 @@ model Farm {
   id                   String             @id @default(cuid())
   slug                 String             @unique
   name                 String
+  normalizedName       String?
   description          String
   street               String
   city                 String
   state                String
   postalCode           String
   country              String             @default("US")
-  latitude             Decimal            @db.Decimal(9, 6)
-  longitude            Decimal            @db.Decimal(9, 6)
+  latitude             Decimal?           @db.Decimal(9, 6)
+  longitude            Decimal?           @db.Decimal(9, 6)
   coordinates          Unsupported("geometry(Point, 4326)")?
   phone                String?
+  normalizedPhone      String?
   publicEmail          String?
   website              String?
+  normalizedDomain     String?
   socialLinks          Json               @default("[]")
   visitInfo            String?
   hours                String?
@@ -74,7 +77,10 @@ model Farm {
 
   @@index([city, state])
   @@index([postalCode])
-  // Add a GiST index on coordinates in a SQL migration when PostGIS is enabled.
+  @@index([publicationStatus, state])
+  @@index([normalizedName])
+  @@index([normalizedPhone])
+  @@index([normalizedDomain])
 }
 
 model ProductCategory {
@@ -111,15 +117,19 @@ model SourceRecord {
   farmId        String
   sourceName    String
   sourceUrl     String?
-  externalId    String?
+  sourcePageUrl String?
+  externalId    String
   importedAt    DateTime @default(now())
   lastCheckedAt DateTime?
-  rawMetadata    Json?
+  parserConfidence Int?
+  parseWarnings String[] @default([])
+  rawMetadata   Json?
   usageNotes    String
   farm          Farm     @relation(fields: [farmId], references: [id], onDelete: Cascade)
 
   @@unique([sourceName, externalId])
   @@index([farmId])
+  @@index([sourceName])
 }
 
 model FarmSubmission {
