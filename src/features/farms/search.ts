@@ -81,8 +81,9 @@ export function searchFarms(params: FarmSearchParams, farms: Farm[] = seedFarms)
     .filter((farm) => matchesCategories(farm, params.categories))
     .map((farm) => ({
       farm,
-      distanceMiles: center ? calculateDistanceMiles(center, farm.coordinates) : undefined,
+      distanceMiles: center && farm.coordinates ? calculateDistanceMiles(center, farm.coordinates) : undefined,
     }))
+    .filter((result) => result.farm.coordinates || result.distanceMiles === undefined)
     .filter((result) => result.distanceMiles === undefined || result.distanceMiles <= radiusMiles)
     .sort((left, right) => {
       if (left.distanceMiles !== undefined && right.distanceMiles !== undefined) {

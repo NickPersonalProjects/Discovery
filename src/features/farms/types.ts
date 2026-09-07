@@ -71,7 +71,7 @@ export interface Farm {
   name: string;
   description: string;
   address: FarmAddress;
-  coordinates: Coordinates;
+  coordinates?: Coordinates;
   phone?: string;
   email?: string;
   website?: string;
